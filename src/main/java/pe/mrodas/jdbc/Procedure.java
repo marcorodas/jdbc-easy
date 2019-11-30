@@ -36,8 +36,9 @@ public class Procedure<T> extends SqlStatement<T> {
         super();
     }
 
-    public void setName(String name) {
+    public Procedure<T> setName(String name) {
         this.name = name;
+        return this;
     }
 
     public Procedure<T> addParameterIn(String name, JDBCType type, Object value) {
