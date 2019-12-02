@@ -7,6 +7,8 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
 
+import pe.mrodas.jdbc.helper.ThrowingConsumer;
+
 public class Connector {
 
     private static Config initConfig;
@@ -36,6 +38,19 @@ public class Connector {
     public static Connection getConnection() throws SQLException, IOException {
         if (connector == null) connector = new Connector(initConfig);
         return connector.getConn();
+    }
+
+    public static void batch(ThrowingConsumer<Connection> consumer) throws Exception {
+        try (Connection connection = Connector.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                consumer.accept(connection);
+                connection.commit();
+            } catch (Exception e) {
+                connection.rollback();
+                throw e;
+            }
+        }
     }
 
     /**

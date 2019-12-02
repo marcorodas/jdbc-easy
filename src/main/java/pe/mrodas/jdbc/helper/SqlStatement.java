@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -93,6 +94,11 @@ public abstract class SqlStatement<T> {
         PreparedStatement statement = this.executeStatement();
         ResultSet rs = statement.getResultSet();
         return this.runForList(() -> executor.apply(statement, rs));
+    }
+
+    public static void onMoreResults(Statement statement, ThrowingConsumer<ResultSet> consumer) throws Exception {
+        if (!statement.getMoreResults()) return;
+        consumer.accept(statement.getResultSet());
     }
 
     protected void close() {

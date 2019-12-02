@@ -94,7 +94,7 @@ public class Procedure<T> extends SqlStatement<T> {
             else statement.registerOutParameter(name, sqlType);
         } catch (SQLException e) {
             String typeParam = sqlType == null ? (value == null ? "NULL IN" : "IN") : "OUT";
-            String error = String.format("Error setting '%s' %s parameter in statement! - ", name, typeParam);
+            String error = String.format("%s: Error setting '%s' parameter[type: %s] in statement! - ", this.name, name, typeParam);
             throw new SQLException(error + e.getMessage(), e);
         }
     }

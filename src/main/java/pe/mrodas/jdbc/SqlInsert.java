@@ -72,7 +72,7 @@ public class SqlInsert {
         try {
             SqlQuery.registerParameter(statement, col + 1, value);
         } catch (Exception e) {
-            String error = String.format("Error setting '%s' parameter (row=%s) in statement! - ", name, row) + e.getMessage();
+            String error = String.format("Insert into %s: Error setting '%s' parameter (row=%s) in statement! - ", this.table, name, row) + e.getMessage();
             throw new SQLException(error, e);
         }
     }
