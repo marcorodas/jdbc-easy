@@ -8,6 +8,7 @@ import java.sql.SQLException;
 import java.util.Properties;
 
 import pe.mrodas.jdbc.helper.ThrowingConsumer;
+import pe.mrodas.jdbc.helper.ThrowingFunction;
 
 public class Connector {
 
@@ -46,6 +47,20 @@ public class Connector {
             try {
                 consumer.accept(connection);
                 connection.commit();
+            } catch (Exception e) {
+                connection.rollback();
+                throw e;
+            }
+        }
+    }
+
+    public static <T> T batch(ThrowingFunction<Connection, T> function) throws Exception {
+        try (Connection connection = Connector.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                T result = function.apply(connection);
+                connection.commit();
+                return result;
             } catch (Exception e) {
                 connection.rollback();
                 throw e;
