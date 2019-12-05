@@ -24,7 +24,12 @@ public class Connector {
         String driver = dbInfo.getProperty("driver");
         if (driver == null) throw new IOException("Missing driver property!");
         try {
-            Class.forName(driver);
+            if (driver.contains("mysql")) try {
+                Class.forName(driver.replace("mysql.", "mysql.cj"));
+            } catch (ClassNotFoundException e) {
+                Class.forName(driver);
+            }
+            else Class.forName(driver);
         } catch (ClassNotFoundException e) {
             throw new IOException(String.format("Class '%s' not found!", driver));
         } catch (Exception e) {
