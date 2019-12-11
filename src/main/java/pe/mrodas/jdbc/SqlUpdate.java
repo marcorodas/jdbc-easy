@@ -10,8 +10,9 @@ import java.util.Map;
 
 import pe.mrodas.jdbc.helper.Autoclose;
 import pe.mrodas.jdbc.helper.InOperator;
+import pe.mrodas.jdbc.helper.SqlDML;
 
-public class SqlUpdate {
+public class SqlUpdate implements SqlDML {
     private final static String QUERY = "UPDATE <table> SET <fields> WHERE <filters>";
     private final List<String> fields = new ArrayList<>();
     private final List<String> filters = new ArrayList<>();
@@ -23,8 +24,9 @@ public class SqlUpdate {
         this.table = table;
     }
 
+    @Override
     public SqlUpdate addField(String name, Object value) {
-        if (value == null) return this;
+        if (name == null || value == null) return this;
         this.fields.add(String.format("%s = :%s", name, name));
         this.fieldsMap.put(name, value);
         return this;
