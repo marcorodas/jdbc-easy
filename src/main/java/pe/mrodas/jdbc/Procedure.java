@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.JDBCType;
-import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -17,9 +17,12 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import pe.mrodas.jdbc.helper.Autoclose;
 import pe.mrodas.jdbc.helper.SqlStatement;
+import pe.mrodas.jdbc.helper.ThrowingBiConsumer;
+import pe.mrodas.jdbc.helper.ThrowingBiFunction;
 
 public class Procedure<T> extends SqlStatement<T> {
 
@@ -68,7 +71,7 @@ public class Procedure<T> extends SqlStatement<T> {
     }
 
     @Override
-    protected PreparedStatement executeStatement() throws IOException, SQLException {
+    protected CallableStatement executeStatement() throws IOException, SQLException {
         int totalParams = parametersIn.size() + parametersOut.size();
         String call = this.getPreparedCall(totalParams);
         CallableStatement statement = super.getConnection().prepareCall(call);
@@ -124,12 +127,31 @@ public class Procedure<T> extends SqlStatement<T> {
             statement.setTimestamp(name, Timestamp.valueOf((LocalDateTime) value));
     }
 
-    public void execute() throws IOException, SQLException {
+    public T call(Supplier<T> objGenerator, ThrowingBiConsumer<T, ResultSet> mapper) throws IOException, SQLException {
+        return super.execute(objGenerator, mapper);
+    }
+
+    public T call(ThrowingBiFunction<CallableStatement, ResultSet, T> executor) throws IOException, SQLException {
+        CallableStatement statement = this.executeStatement();
+        ResultSet rs = statement.getResultSet();
+        return super.run(() -> executor.apply(statement, rs));
+    }
+
+    public List<T> callForList(Supplier<T> objGenerator, ThrowingBiConsumer<T, ResultSet> mapper) throws IOException, SQLException {
+        return super.executeForList(objGenerator, mapper);
+    }
+
+    public List<T> callForList(ThrowingBiFunction<CallableStatement, ResultSet, List<T>> executor) throws IOException, SQLException {
+        CallableStatement statement = this.executeStatement();
+        ResultSet rs = statement.getResultSet();
+        return super.runForList(() -> executor.apply(statement, rs));
+    }
+
+    public void call() throws IOException, SQLException {
         try {
             this.executeStatement();
         } finally {
             super.close();
         }
     }
-
 }
