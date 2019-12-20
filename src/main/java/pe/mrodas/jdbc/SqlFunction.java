@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.List;
 
 import pe.mrodas.jdbc.helper.CursorIterator;
+import pe.mrodas.jdbc.helper.Parameter;
 import pe.mrodas.jdbc.helper.ThrowingBiFunction;
 
 public class SqlFunction<T> {
@@ -43,10 +44,15 @@ public class SqlFunction<T> {
                 .replace("<parameters>", String.join(", ", params));
         Connection conn = connection == null ? Connector.getConnection() : connection;
         PreparedStatement statement = conn.prepareStatement(preparedQuery);
-        for (Integer pos : new CursorIterator(numParameters)) {
-            String name = String.format("#%s", pos);
-            Object value = parameters.get(pos);
-            SqlQuery.tryRegisterParameter(statement, pos, name, value);
+        CursorIterator iterator = new CursorIterator(numParameters);
+        try {
+            for (Integer pos : iterator)
+                new Parameter<>(parameters.get(pos))
+                        .registerIN(statement, pos + 1);
+        } catch (SQLException e) {
+            String name = String.format("#%s", iterator.getPos() + 1);
+            String msg = String.format("Error setting '%s' parameter in statement! - ", name);
+            throw new SQLException(msg + e.getMessage(), e);
         }
         statement.execute();
         ResultSet rs = statement.getResultSet();

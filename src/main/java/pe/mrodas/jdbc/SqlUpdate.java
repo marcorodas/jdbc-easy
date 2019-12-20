@@ -19,33 +19,59 @@ public class SqlUpdate implements SqlDML {
     private final Map<String, Object> fieldsMap = new HashMap<>();
     private final Map<String, Object> filtersMap = new HashMap<>();
     private final String table;
+    private final boolean ignoreNullFields;
+    private String error;
+
+    public SqlUpdate(String table, boolean ignoreNullFields) {
+        this.table = table;
+        this.ignoreNullFields = ignoreNullFields;
+    }
 
     public SqlUpdate(String table) {
-        this.table = table;
+        this(table, true);
     }
 
     @Override
     public SqlUpdate addField(String name, Object value) {
-        if (name == null || value == null) return this;
-        this.fields.add(String.format("%s = :%s", name, name));
-        this.fieldsMap.put(name, value);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Field name can't be null or empty!";
+        else if (value == null) {
+            if (ignoreNullFields) return this;
+            fields.add(String.format("%s = NULL", name));
+        } else {
+            fields.add(String.format("%s = :%s", name, name));
+            fieldsMap.put(name, value);
+        }
         return this;
     }
 
     public SqlUpdate addFilter(String name, Object value) {
-        if (value == null) return this;
-        this.filters.add(String.format("%s = :%s", name, name));
-        this.filtersMap.put(name, value);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Filter name can't be null or empty!";
+        else if (value == null)
+            error = String.format("Filter '%s' value can't be null!", name);
+        else {
+            filters.add(String.format("%s = :%s", name, name));
+            filtersMap.put(name, value);
+        }
         return this;
     }
 
     public <T> SqlUpdate addFilter(String name, List<T> values) {
-        if (name == null || name.isEmpty()) return this;
-        if (values == null || values.isEmpty()) return this;
-        InOperator<T> inOperator = new InOperator<>(name, values);
-        String fields = inOperator.getFields();
-        this.filters.add(String.format("%s IN (%s)", name, fields));
-        inOperator.getParameters().forEach(this.filtersMap::put);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Filter name can't be null or empty!";
+        else {
+            InOperator<T> inOperator = new InOperator<>(name, values);
+            if (inOperator.isInvalid())
+                error = String.format("Filter list '%s' can't be null or empty!", name);
+            else {
+                filters.add(String.format("%s IN (%s)", name, inOperator.getFields()));
+                inOperator.getParameters().forEach(filtersMap::put);
+            }
+        }
         return this;
     }
 
@@ -55,6 +81,7 @@ public class SqlUpdate implements SqlDML {
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
+        if (error != null) throw new IOException(error);
         SqlQuery<?> sqlQuery = (connection == null ? new SqlQuery<>()
                 : new SqlQuery<>(connection, autoclose == null ? Autoclose.YES : autoclose));
         String preparedQuery = QUERY.replace("<table>", table)

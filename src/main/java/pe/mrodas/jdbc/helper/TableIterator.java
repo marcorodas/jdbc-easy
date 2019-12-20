@@ -19,7 +19,7 @@ public class TableIterator {
     }
 
     public CursorIterator getColIterator() {
-        return colIterator.reset();
+        return colIterator;
     }
 
     public int getTotalRows() {
@@ -30,11 +30,11 @@ public class TableIterator {
         return colIterator.getTotal();
     }
 
-    public int getPosRow(){
+    public int getPosRow() {
         return rowIterator.getPos();
     }
 
-    public int getPosCol(){
+    public int getPosCol() {
         return colIterator.getPos();
     }
 

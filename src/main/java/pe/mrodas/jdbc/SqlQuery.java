@@ -1,19 +1,12 @@
 package pe.mrodas.jdbc;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Time;
-import java.sql.Timestamp;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -23,12 +16,13 @@ import pe.mrodas.jdbc.helper.Autoclose;
 import pe.mrodas.jdbc.helper.CursorIterator;
 import pe.mrodas.jdbc.helper.GeneratedKeys;
 import pe.mrodas.jdbc.helper.InOperator;
+import pe.mrodas.jdbc.helper.Parameter;
 import pe.mrodas.jdbc.helper.SqlStatement;
 
 public class SqlQuery<T> extends SqlStatement<T> {
 
     private GeneratedKeys generatedKeys;
-    private String query, originalQuery;
+    private String query, preparedQuery;
     private List<String> parametersInQuery = new ArrayList<>();
     private final HashMap<String, Object> parameters = new HashMap<>();
     private final HashMap<String, String> inReplacement = new HashMap<>();
@@ -68,12 +62,12 @@ public class SqlQuery<T> extends SqlStatement<T> {
      * @return El mismo objeto SqlQuery
      */
     public SqlQuery<T> addParameter(String name, Object value) {
-        if (this.error != null) return this;
+        if (error != null) return this;
         if (name == null || name.trim().isEmpty())
-            this.error = "Parameter name can't be null or empty!";
+            error = "Parameter name can't be null or empty!";
         else if (value == null)
-            this.error = String.format("Parameter '%s' value can't be null!", name);
-        else this.parameters.put(name, value);
+            error = String.format("Parameter '%s' value can't be null!", name);
+        else parameters.put(name, value);
         return this;
     }
 
@@ -87,105 +81,64 @@ public class SqlQuery<T> extends SqlStatement<T> {
      * @return El mismo objeto SqlQuery
      */
     public <S> SqlQuery<T> addParameter(String name, List<S> values) {
-        if (this.error != null) return this;
+        if (error != null) return this;
         if (name == null || name.trim().isEmpty())
-            this.error = "Parameter name can't be null or empty!";
+            error = "Parameter name can't be null or empty!";
         else {
             InOperator<S> inOperator = new InOperator<>(name, values);
             if (inOperator.isInvalid())
-                this.error = String.format("Parameter '%s' value can't be null or empty!", name);
+                error = String.format("Parameter list '%s' can't be null or empty!", name);
             else {
-                if (!this.inReplacement.containsKey(name)) {
-                    this.inReplacement.put(name, inOperator.getFields());
-                    inOperator.getParameters().forEach(this.parameters::put);
+                if (!inReplacement.containsKey(name)) {
+                    inReplacement.put(name, inOperator.getFields());
+                    inOperator.getParameters().forEach(parameters::put);
                 }
             }
         }
         return this;
     }
 
-    private void prepareQuery() {
-        if (!this.parametersInQuery.isEmpty() || this.error != null) return;
-        if (this.query == null || this.query.isEmpty()) {
-            this.error = "Query can't be null or empty!";
-            return;
-        }
-        this.inReplacement.forEach((name, fields) -> this.query = this.query.replace(name, fields));
-        this.originalQuery = this.query;
-        Matcher matcher = Pattern.compile(":\\w+").matcher(this.query);
-        while (matcher.find()) {
-            String paramNameInQuery = matcher.group().substring(1);
-            if (this.parameters.containsKey(paramNameInQuery))
-                this.parametersInQuery.add(paramNameInQuery);
-            else {
-                this.error = String.format("Missing parameter '%s'!", paramNameInQuery);
-                break;
-            }
-        }
-        if (this.error != null) return;
-        this.parameters.keySet().forEach(name -> this.query = this.query.replace(":" + name, "?"));
-    }
-
-    private PreparedStatement getPreparedStatement() throws SQLException, IOException {
-        Connection connection = super.getConnection();
-        return generatedKeys == GeneratedKeys.RETURN
-                ? connection.prepareStatement(query, Statement.RETURN_GENERATED_KEYS)
-                : connection.prepareStatement(query);
-    }
-
     @Override
     protected SQLException buildCallableException(SQLException e) {
-        String msj = String.format("%s Query:(%s)", e.getMessage(), this.originalQuery);
+        String msj = String.format("%s Query:(%s)", e.getMessage(), query);
         return new SQLException(msj, e);
+    }
+
+    private String getPreparedQuery() throws IOException {
+        if (query == null || query.trim().isEmpty())
+            throw new IOException("Query can't be null or empty!");
+        if (error != null) throw new IOException(error);
+        this.inReplacement.forEach((name, fields) -> query = query.replace(name, fields));
+        Matcher matcher = Pattern.compile(":\\w+").matcher(query);
+        while (matcher.find()) {
+            String paramNameInQuery = matcher.group().substring(1);
+            if (parameters.containsKey(paramNameInQuery))
+                parametersInQuery.add(paramNameInQuery);
+            else throw new IOException(String.format("Missing parameter '%s'!", paramNameInQuery));
+        }
+        return query.replaceAll(":\\w+", "?");
     }
 
     @Override
     protected PreparedStatement executeStatement() throws SQLException, IOException {
-        this.prepareQuery();
-        if (this.error != null) throw new IOException(this.error);
-        PreparedStatement statement = this.getPreparedStatement();
-        int size = parametersInQuery.size();
-        for (Integer pos : new CursorIterator(size)) {
-            String name = parametersInQuery.get(pos);
-            Object value = parameters.get(name);
-            SqlQuery.tryRegisterParameter(statement, pos, name, value);
+        preparedQuery = preparedQuery == null ? this.getPreparedQuery() : preparedQuery;
+        Connection connection = super.getConnection();
+        PreparedStatement statement = generatedKeys == GeneratedKeys.RETURN
+                ? connection.prepareStatement(preparedQuery, Statement.RETURN_GENERATED_KEYS)
+                : connection.prepareStatement(preparedQuery);
+        CursorIterator iterator = new CursorIterator(parametersInQuery.size());
+        try {
+            for (Integer pos : iterator) {
+                String name = parametersInQuery.get(pos);
+                new Parameter<>(parameters.get(name)).registerIN(statement, pos + 1);
+            }
+        } catch (SQLException e) {
+            String name = parametersInQuery.get(iterator.getPos());
+            String errorMsg = "Error setting '%s' parameter in statement! - %s";
+            throw new SQLException(String.format(errorMsg, name, e.getMessage()), e);
         }
         statement.execute();
         return statement;
-    }
-
-    static void tryRegisterParameter(PreparedStatement statement, Integer pos, String name, Object value) throws SQLException {
-        try {
-            SqlQuery.registerParameter(statement, pos + 1, value);
-        } catch (Exception e) {
-            String error = String.format("Error setting '%s' parameter in statement! - ", name);
-            throw new SQLException(error + e.getMessage(), e);
-        }
-    }
-
-    static void registerParameter(PreparedStatement statement, int index, Object value) throws SQLException {
-        Class<?> objClass = value.getClass();
-        if (objClass.isArray()) {
-            Class<?> componentType = value.getClass().getComponentType();
-            if (componentType != null && componentType.isPrimitive())
-                if (byte.class.isAssignableFrom(componentType))
-                    statement.setBytes(index, (byte[]) value);
-        } else if (objClass == Integer.class) statement.setInt(index, (Integer) value);
-        else if (objClass == String.class) statement.setString(index, (String) value);
-        else if (objClass == Boolean.class) statement.setBoolean(index, (Boolean) value);
-        else if (objClass == Double.class) statement.setDouble(index, (Double) value);
-        else if (objClass == Float.class) statement.setFloat(index, (Float) value);
-        else if (value instanceof InputStream) statement.setBlob(index, (InputStream) value);
-        else if (objClass == Date.class) {
-            long time = ((Date) value).getTime();
-            statement.setTimestamp(index, new Timestamp(time));
-        } else if (objClass == Time.class) statement.setTime(index, (Time) value);
-        else if (objClass == Timestamp.class) statement.setTimestamp(index, (Timestamp) value);
-        else if (objClass == LocalDate.class)
-            statement.setDate(index, java.sql.Date.valueOf((LocalDate) value));
-        else if (objClass == LocalTime.class) statement.setTime(index, Time.valueOf((LocalTime) value));
-        else if (objClass == LocalDateTime.class)
-            statement.setTimestamp(index, Timestamp.valueOf((LocalDateTime) value));
     }
 
     /**
@@ -202,7 +155,7 @@ public class SqlQuery<T> extends SqlStatement<T> {
      */
     public int execute() throws IOException, SQLException {
         try {
-            if (this.generatedKeys != GeneratedKeys.RETURN)
+            if (generatedKeys != GeneratedKeys.RETURN)
                 return this.executeStatement().getUpdateCount();
             ResultSet rs = this.executeStatement().getGeneratedKeys();
             if (rs.next()) {

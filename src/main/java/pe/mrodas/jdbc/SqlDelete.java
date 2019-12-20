@@ -16,25 +16,39 @@ public class SqlDelete {
     private final List<String> filters = new ArrayList<>();
     private final Map<String, Object> filtersMap = new HashMap<>();
     private final String table;
+    private String error;
 
     public SqlDelete(String table) {
         this.table = table;
     }
 
     public SqlDelete addFilter(String name, Object value) {
-        if (value == null) return this;
-        this.filters.add(String.format("%s = :%s", name, name));
-        this.filtersMap.put(name, value);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Filter name can't be null or empty!";
+        else if (value == null)
+            error = String.format("Filter '%s' value can't be null!", name);
+        else {
+            this.filters.add(String.format("%s = :%s", name, name));
+            this.filtersMap.put(name, value);
+        }
         return this;
     }
 
     public <T> SqlDelete addFilter(String name, List<T> values) {
-        if (name == null || name.isEmpty()) return this;
-        if (values == null || values.isEmpty()) return this;
-        InOperator<T> inOperator = new InOperator<>(name, values);
-        String fields = inOperator.getFields();
-        this.filters.add(String.format("%s IN (%s)", name, fields));
-        inOperator.getParameters().forEach(this.filtersMap::put);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Parameter name can't be null or empty!";
+        else {
+            InOperator<T> inOperator = new InOperator<>(name, values);
+            if (inOperator.isInvalid())
+                error = String.format("Parameter list '%s' can't be null or empty!", name);
+            else {
+                String filter = String.format("%s IN (%s)", name, inOperator.getFields());
+                filters.add(filter);
+                inOperator.getParameters().forEach(filtersMap::put);
+            }
+        }
         return this;
     }
 
@@ -44,7 +58,8 @@ public class SqlDelete {
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
-        if (filters.isEmpty()) throw new IOException("Filters can't be empty! Could delete all data!");
+        if (error != null) throw new IOException(error);
+        if (filters.isEmpty()) throw new IOException("Filters can't be empty!");
         SqlQuery<?> sqlQuery = (connection == null ? new SqlQuery<>()
                 : new SqlQuery<>(connection, autoclose == null ? Autoclose.YES : autoclose));
         String preparedQuery = QUERY.replace("<table>", table)

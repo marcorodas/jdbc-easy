@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import pe.mrodas.jdbc.helper.Autoclose;
-import pe.mrodas.jdbc.helper.CursorIterator;
+import pe.mrodas.jdbc.helper.Parameter;
 import pe.mrodas.jdbc.helper.SqlDML;
 import pe.mrodas.jdbc.helper.TableIterator;
 
@@ -24,6 +24,7 @@ public class SqlInsert implements SqlDML {
     private final Map<String, List<Object>> valueListMap = new HashMap<>();
     private final String table;
     private final Consumer<Integer> setterId;
+    private String error;
 
     public SqlInsert(String table) {
         this(table, null);
@@ -36,9 +37,13 @@ public class SqlInsert implements SqlDML {
 
     @Override
     public SqlInsert addField(String name, Object value) {
-        if (name == null || value == null) return this;
-        if (!valueListMap.containsKey(name)) valueListMap.put(name, new ArrayList<>());
-        valueListMap.get(name).add(value);
+        if (error != null) return this;
+        if (name == null || name.trim().isEmpty())
+            error = "Field name can't be null or empty!";
+        else if (value != null) {
+            if (!valueListMap.containsKey(name)) valueListMap.put(name, new ArrayList<>());
+            valueListMap.get(name).add(value);
+        }
         return this;
     }
 
@@ -56,10 +61,10 @@ public class SqlInsert implements SqlDML {
     }
 
     private String getPreparedQuery(List<String> fieldNames) {
-        List<String> values = Collections.nCopies(valueListMap.keySet().size(), "?");
+        int valuesSize = valueListMap.keySet().size();
         return QUERY.replace("<table>", table)
                 .replace("<fields>", String.join(", ", fieldNames))
-                .replace("<values>", String.join(", ", values));
+                .replace("<values>", String.join(", ", Collections.nCopies(valuesSize, "?")));
     }
 
     private PreparedStatement getPreparedStatement(Connection conn, String preparedQuery) throws SQLException {
@@ -68,46 +73,36 @@ public class SqlInsert implements SqlDML {
                 : conn.prepareStatement(preparedQuery, Statement.RETURN_GENERATED_KEYS);
     }
 
-    private void tryRegisterParameter(PreparedStatement statement, String name, TableIterator tableIterator) throws SQLException {
-        int row = tableIterator.getPosRow();
-        int col = tableIterator.getPosCol();
-        Object value = valueListMap.get(name).get(row);
-        try {
-            SqlQuery.registerParameter(statement, col + 1, value);
-        } catch (Exception e) {
-            String error = String.format("Insert into %s: Error setting '%s' parameter (row=%s) in statement! - ", this.table, name, row) + e.getMessage();
-            throw new SQLException(error, e);
-        }
-    }
-
     public void executeStatement(PreparedStatement statement, List<String> fieldNames, int totalRows) throws SQLException {
         int totalCols = fieldNames.size();
-        if (totalRows == 1) {
-            for (Integer col : new CursorIterator(totalCols)) {
-                String name = fieldNames.get(col);
-                Object value = valueListMap.get(name).get(0);
-                SqlQuery.tryRegisterParameter(statement, col, name, value);
+        TableIterator iterator = new TableIterator(totalRows, totalCols);
+        try {
+            for (Integer row : iterator.getRowIterator()) {
+                for (Integer col : iterator.getColIterator().reset()) {
+                    String name = fieldNames.get(col);
+                    new Parameter<>(valueListMap.get(name).get(row))
+                            .registerIN(statement, col + 1);
+                }
+                if (totalRows > 1) statement.addBatch();
             }
-            statement.execute();
-            return;
+        } catch (SQLException e) {
+            if (!iterator.getColIterator().hasNext()) throw e;
+            String name = fieldNames.get(iterator.getPosCol());
+            String errorMsg = "Insert into %s: Error setting '%s' parameter (row=%s) in statement! - %s";
+            String error = String.format(errorMsg, this.table, name, iterator.getPosRow(), e.getMessage());
+            throw new SQLException(error, e);
         }
-        TableIterator tableIterator = new TableIterator(totalRows, totalCols);
-        for (Integer row : tableIterator.getRowIterator()) {
-            for (Integer col : tableIterator.getColIterator()) {
-                String name = fieldNames.get(col);
-                this.tryRegisterParameter(statement, name, tableIterator);
-            }
-            statement.addBatch();
-        }
-        statement.executeBatch();
+        if (totalRows > 1) statement.executeBatch();
+        else statement.execute();
     }
 
     public int execute() throws IOException, SQLException {
-        return this.execute(null, Autoclose.YES);
+        return this.execute(null, null);
     }
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
+        if (error != null) throw new IOException(error);
         if (valueListMap.isEmpty()) throw new IOException("Fields can't be empty!");
         List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
         int totalRows = this.checkNumRows(fieldNames);
@@ -125,7 +120,7 @@ public class SqlInsert implements SqlDML {
             }
             throw new SQLException("Error getting autogenerated key!");
         } finally {
-            this.close(conn, autoclose);
+            this.close(conn, autoclose == null ? Autoclose.YES : autoclose);
         }
     }
 

@@ -26,7 +26,7 @@ public class CursorIterator implements Iterator<Integer>, Iterable<Integer> {
     }
 
     public int getPos() {
-        return cursor == 0 ? 0 : cursor - 1 ;
+        return cursor == 0 ? 0 : cursor - 1;
     }
 
     public CursorIterator reset() {
