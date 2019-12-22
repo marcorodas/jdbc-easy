@@ -89,8 +89,9 @@ public class SqlQuery<T> extends SqlStatement<T> {
             if (inOperator.isInvalid())
                 error = String.format("Parameter list '%s' can't be null or empty!", name);
             else {
-                if (!inReplacement.containsKey(name)) {
-                    inReplacement.put(name, inOperator.getFields());
+                String key = ":".concat(name);
+                if (!inReplacement.containsKey(key)) {
+                    inReplacement.put(key, inOperator.getFields());
                     inOperator.getParameters().forEach(parameters::put);
                 }
             }
@@ -108,7 +109,7 @@ public class SqlQuery<T> extends SqlStatement<T> {
         if (query == null || query.trim().isEmpty())
             throw new IOException("Query can't be null or empty!");
         if (error != null) throw new IOException(error);
-        this.inReplacement.forEach((name, fields) -> query = query.replace(name, fields));
+        this.inReplacement.forEach((key, fields) -> query = query.replace(key, fields));
         Matcher matcher = Pattern.compile(":\\w+").matcher(query);
         while (matcher.find()) {
             String paramNameInQuery = matcher.group().substring(1);
