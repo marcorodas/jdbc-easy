@@ -106,6 +106,10 @@ public abstract class SqlStatement<T> {
     public static <T> void onMoreResults(Statement statement, Supplier<T> objGenerator, ThrowingBiConsumer<T, ResultSet> mapper, ThrowingConsumer<List<T>> resultHandler) throws Exception {
         if (!statement.getMoreResults()) return;
         ResultSet rs = statement.getResultSet();
+        SqlStatement.whileResults(rs, objGenerator, mapper, resultHandler);
+    }
+
+    public static <T> void whileResults(ResultSet rs, Supplier<T> objGenerator, ThrowingBiConsumer<T, ResultSet> mapper, ThrowingConsumer<List<T>> resultHandler) throws Exception {
         if (rs == null) return;
         List<T> list = new ArrayList<>();
         while (rs.next()) {
