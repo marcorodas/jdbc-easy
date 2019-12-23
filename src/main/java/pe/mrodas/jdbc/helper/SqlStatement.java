@@ -98,7 +98,22 @@ public abstract class SqlStatement<T> {
 
     public static void onMoreResults(Statement statement, ThrowingConsumer<ResultSet> consumer) throws Exception {
         if (!statement.getMoreResults()) return;
-        consumer.accept(statement.getResultSet());
+        ResultSet rs = statement.getResultSet();
+        if (rs == null || !rs.next()) return;
+        consumer.accept(rs);
+    }
+
+    public static <T> void onMoreResults(Statement statement, Supplier<T> objGenerator, ThrowingBiConsumer<T, ResultSet> mapper, ThrowingConsumer<List<T>> resultHandler) throws Exception {
+        if (!statement.getMoreResults()) return;
+        ResultSet rs = statement.getResultSet();
+        if (rs == null) return;
+        List<T> list = new ArrayList<>();
+        while (rs.next()) {
+            T obj = objGenerator.get();
+            mapper.accept(obj, rs);
+            list.add(obj);
+        }
+        resultHandler.accept(list);
     }
 
     protected void close() {
