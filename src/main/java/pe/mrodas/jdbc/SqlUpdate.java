@@ -81,6 +81,8 @@ public class SqlUpdate implements SqlDML {
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
+        if (fields.isEmpty()) throw new IOException("Fields can't be empty!");
+        if (filters.isEmpty()) throw new IOException("Filters can't be empty!");
         if (error != null) throw new IOException(error);
         SqlQuery<?> sqlQuery = (connection == null ? new SqlQuery<>()
                 : new SqlQuery<>(connection, autoclose == null ? Autoclose.YES : autoclose));

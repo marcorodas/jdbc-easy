@@ -58,8 +58,8 @@ public class SqlDelete {
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
+        if (filters.isEmpty()) error = "Filters can't be empty!";
         if (error != null) throw new IOException(error);
-        if (filters.isEmpty()) throw new IOException("Filters can't be empty!");
         SqlQuery<?> sqlQuery = (connection == null ? new SqlQuery<>()
                 : new SqlQuery<>(connection, autoclose == null ? Autoclose.YES : autoclose));
         String preparedQuery = QUERY.replace("<table>", table)

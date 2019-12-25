@@ -102,8 +102,8 @@ public class SqlInsert implements SqlDML {
 
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
+        if (valueListMap.isEmpty()) error = "Fields can't be empty!";
         if (error != null) throw new IOException(error);
-        if (valueListMap.isEmpty()) throw new IOException("Fields can't be empty!");
         List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
         int totalRows = this.checkNumRows(fieldNames);
         Connection conn = connection == null ? Connector.getConnection() : connection;
