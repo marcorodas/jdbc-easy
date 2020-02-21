@@ -59,12 +59,16 @@ public class Parameter<P> {
         throw new SQLException("Unable to find JDBCType for '" + objClass.getName() + "' class");
     }
 
+    public Integer getSqlType() throws SQLException {
+        JDBCType jdbcType = type == null ? this.getJDBCType(pClass) : type;
+        if (jdbcType == null)
+            throw new SQLException("JDBCType or Class must be defined as NOT NULL in constructor ParamValue!");
+        return jdbcType.getVendorTypeNumber();
+    }
+
     public void registerIN(CallableStatement statement, String name) throws SQLException {
-        if (value == null) {
-            JDBCType jdbcType = type == null ? this.getJDBCType(pClass) : type;
-            if (jdbcType != null) statement.setNull(name, jdbcType.getVendorTypeNumber());
-            else throw new SQLException("JDBCType or Class must be defined as NOT NULL in constructor ParamValue!");
-        } else {
+        if (value == null) statement.setNull(name, this.getSqlType());
+        else {
             Class<?> objClass = pClass == null ? value.getClass() : pClass;
             if (objClass.isArray()) {
                 Class<?> componentType = objClass.getComponentType();

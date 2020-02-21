@@ -2,6 +2,7 @@ package pe.mrodas.jdbc;
 
 import java.io.IOException;
 import java.sql.Connection;
+import java.sql.JDBCType;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -11,6 +12,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import pe.mrodas.jdbc.helper.Autoclose;
@@ -21,10 +23,11 @@ import pe.mrodas.jdbc.helper.TableIterator;
 public class SqlInsert implements SqlDML {
 
     private final static String QUERY = "INSERT INTO <table> (<fields>) VALUES (<values>)";
-    private final Map<String, List<Object>> valueListMap = new HashMap<>();
+    private final Map<String, List<Parameter<?>>> valueListMap = new HashMap<>();
     private final String table;
     private final Consumer<Integer> setterId;
     private String error;
+    private int totalRows;
 
     public SqlInsert(String table) {
         this(table, null);
@@ -37,34 +40,36 @@ public class SqlInsert implements SqlDML {
 
     @Override
     public SqlInsert addField(String name, Object value) {
+        return this.addField(name, new Parameter<>(value), false);
+    }
+
+    public SqlInsert addField(String name, Object value, JDBCType type) {
+        return this.addField(name, new Parameter<>(value, type), true);
+    }
+
+    public <P> SqlInsert addField(String name, P value, Class<P> objClass) {
+        return this.addField(name, new Parameter<>(value, objClass), true);
+    }
+
+    private SqlInsert addField(String name, Parameter<?> parameter, boolean allowNull) {
         if (error != null) return this;
         if (name == null || name.trim().isEmpty())
             error = "Field name can't be null or empty!";
-        else if (value != null) {
+        else if (!allowNull && parameter.valueIsNull()) {
+            error = String.format("'%s' value is null but lacks JdbcType or Class<> definition in SqlInsert.addFieldMethod!", name);
+        } else {
             if (!valueListMap.containsKey(name)) valueListMap.put(name, new ArrayList<>());
-            valueListMap.get(name).add(value);
+            valueListMap.get(name).add(parameter);
         }
         return this;
     }
 
-    private int checkNumRows(List<String> fieldNames) throws IOException {
-        List<Integer> rows = new ArrayList<>(1);
-        for (String name : fieldNames) {
-            int listSize = valueListMap.get(name).size();
-            if (rows.isEmpty()) rows.add(listSize);
-            else if (rows.get(0) != listSize) {
-                String msg = listSize > rows.get(0) ? "more" : "less";
-                throw new IOException(String.format("Fields Error: %s has %s rows than other fields!", name, msg));
-            }
-        }
-        return valueListMap.get(fieldNames.get(0)).size();
-    }
-
-    private String getPreparedQuery(List<String> fieldNames) {
-        int valuesSize = valueListMap.keySet().size();
+    private String getPreparedQuery() {
+        Set<String> fieldNames = valueListMap.keySet();
+        List<String> questionMarks = Collections.nCopies(fieldNames.size(), "?");
         return QUERY.replace("<table>", table)
                 .replace("<fields>", String.join(", ", fieldNames))
-                .replace("<values>", String.join(", ", Collections.nCopies(valuesSize, "?")));
+                .replace("<values>", String.join(", ", questionMarks));
     }
 
     private PreparedStatement getPreparedStatement(Connection conn, String preparedQuery) throws SQLException {
@@ -73,15 +78,17 @@ public class SqlInsert implements SqlDML {
                 : conn.prepareStatement(preparedQuery, Statement.RETURN_GENERATED_KEYS);
     }
 
-    public void executeStatement(PreparedStatement statement, List<String> fieldNames, int totalRows) throws SQLException {
-        int totalCols = fieldNames.size();
-        TableIterator iterator = new TableIterator(totalRows, totalCols);
+    public void executeStatement(PreparedStatement statement) throws SQLException {
+        List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
+        TableIterator iterator = new TableIterator(totalRows, fieldNames.size());
         try {
             for (Integer row : iterator.getRowIterator()) {
                 for (Integer col : iterator.getColIterator().reset()) {
                     String name = fieldNames.get(col);
-                    new Parameter<>(valueListMap.get(name).get(row))
-                            .registerIN(statement, col + 1);
+                    Parameter<?> parameter = valueListMap.get(name).get(row);
+                    if (parameter.valueIsNull())
+                        statement.setNull(col + 1, parameter.getSqlType());
+                    else parameter.registerIN(statement, col + 1);
                 }
                 if (totalRows > 1) statement.addBatch();
             }
@@ -100,16 +107,28 @@ public class SqlInsert implements SqlDML {
         return this.execute(null, null);
     }
 
+    private String checkNumRows() {
+        if (error == null) for (Map.Entry<String, List<Parameter<?>>> entry : valueListMap.entrySet()) {
+            int numRowsByField = entry.getValue().size();
+            if (totalRows == 0) totalRows = numRowsByField;
+            if (totalRows != numRowsByField) {
+                String fieldName = entry.getKey();
+                String msg = totalRows > numRowsByField ? "less" : "more";
+                return String.format("Fields Error: %s has %s rows than other fields!", fieldName, msg);
+            }
+        }
+        return error;
+    }
+
     public int execute(Connection connection, Autoclose autoclose) throws IOException, SQLException {
         if (table == null) throw new IOException("Table name can't be null!");
         if (valueListMap.isEmpty()) error = "Fields can't be empty!";
+        error = this.checkNumRows();
         if (error != null) throw new IOException(error);
-        List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
-        int totalRows = this.checkNumRows(fieldNames);
         Connection conn = connection == null ? Connector.getConnection() : connection;
-        String preparedQuery = this.getPreparedQuery(fieldNames);
+        String preparedQuery = this.getPreparedQuery();
         PreparedStatement statement = this.getPreparedStatement(conn, preparedQuery);
-        this.executeStatement(statement, fieldNames, totalRows);
+        this.executeStatement(statement);
         try {
             if (setterId == null) return statement.getUpdateCount();
             ResultSet rs = statement.getGeneratedKeys();
