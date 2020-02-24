@@ -40,7 +40,7 @@ public class SqlUpdate implements SqlDML {
             if (ignoreNullFields) return this;
             fields.add(String.format("%s = NULL", name));
         } else {
-            fields.add(String.format("%s = :%s", name, name));
+            fields.add(this.getParameter(name));
             fieldsMap.put(name, value);
         }
         return this;
@@ -53,7 +53,7 @@ public class SqlUpdate implements SqlDML {
         else if (value == null)
             error = String.format("Filter '%s' value can't be null!", name);
         else {
-            filters.add(String.format("%s = :%s", name, name));
+            filters.add(this.getParameter(name));
             filtersMap.put(name, value);
         }
         return this;
@@ -64,15 +64,30 @@ public class SqlUpdate implements SqlDML {
         if (name == null || name.trim().isEmpty())
             error = "Filter name can't be null or empty!";
         else {
-            InOperator<T> inOperator = new InOperator<>(name, values);
+            InOperator<T> inOperator = new InOperator<>(this.sanitize(name), values);
             if (inOperator.isInvalid())
                 error = String.format("Filter list '%s' can't be null or empty!", name);
             else {
-                filters.add(String.format("%s IN (%s)", name, inOperator.getFields()));
+                String fields = inOperator.getFields();
+                filters.add(String.format("%s IN (%s)", name, fields));
                 inOperator.getParameters().forEach(filtersMap::put);
             }
         }
         return this;
+    }
+
+    private String getParameter(String name) {
+        return String.format("%s = :%s", name, this.sanitize(name));
+    }
+
+    private String sanitize(String name) {
+        int endIndex = name.length() - 1;
+        if (name.charAt(0) != name.charAt(endIndex)) return name;
+        if (name.charAt(0) != '`') return name;
+        String sanitized = name.substring(1, endIndex);
+        if (sanitized.trim().isEmpty())
+            error = String.format("Parameter '%s' can't be empty!", name);
+        return sanitized;
     }
 
     public int execute() throws IOException, SQLException {
