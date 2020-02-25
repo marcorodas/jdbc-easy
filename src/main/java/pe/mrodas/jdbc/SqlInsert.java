@@ -12,7 +12,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import pe.mrodas.jdbc.helper.Autoclose;
@@ -64,8 +63,7 @@ public class SqlInsert implements SqlDML {
         return this;
     }
 
-    private String getPreparedQuery() {
-        Set<String> fieldNames = valueListMap.keySet();
+    private String getPreparedQuery(List<String> fieldNames) {
         List<String> questionMarks = Collections.nCopies(fieldNames.size(), "?");
         return QUERY.replace("<table>", table)
                 .replace("<fields>", String.join(", ", fieldNames))
@@ -78,8 +76,7 @@ public class SqlInsert implements SqlDML {
                 : conn.prepareStatement(preparedQuery, Statement.RETURN_GENERATED_KEYS);
     }
 
-    public void executeStatement(PreparedStatement statement) throws SQLException {
-        List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
+    public void executeStatement(PreparedStatement statement, List<String> fieldNames) throws SQLException {
         TableIterator iterator = new TableIterator(totalRows, fieldNames.size());
         try {
             for (Integer row : iterator.getRowIterator()) {
@@ -126,9 +123,10 @@ public class SqlInsert implements SqlDML {
         error = this.checkNumRows();
         if (error != null) throw new IOException(error);
         Connection conn = connection == null ? Connector.getConnection() : connection;
-        String preparedQuery = this.getPreparedQuery();
+        List<String> fieldNames = new ArrayList<>(valueListMap.keySet());
+        String preparedQuery = this.getPreparedQuery(fieldNames);
         PreparedStatement statement = this.getPreparedStatement(conn, preparedQuery);
-        this.executeStatement(statement);
+        this.executeStatement(statement, fieldNames);
         try {
             if (setterId == null) return statement.getUpdateCount();
             ResultSet rs = statement.getGeneratedKeys();

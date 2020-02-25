@@ -125,4 +125,28 @@ public class Parameter<P> {
         else throw new SQLException("JDBCType or Class must be defined as NOT NULL in constructor ParamValue!");
     }
 
+    public static class Position {
+        private int pos;
+        private String name;
+
+        public Position(int pos) {
+            this.pos = pos;
+        }
+
+        public int incrementAndGet(){
+            return ++pos;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public int getPos() {
+            return pos;
+        }
+    }
 }

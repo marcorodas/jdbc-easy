@@ -13,7 +13,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import pe.mrodas.jdbc.helper.Autoclose;
-import pe.mrodas.jdbc.helper.CursorIterator;
 import pe.mrodas.jdbc.helper.GeneratedKeys;
 import pe.mrodas.jdbc.helper.InOperator;
 import pe.mrodas.jdbc.helper.Parameter;
@@ -127,16 +126,15 @@ public class SqlQuery<T> extends SqlStatement<T> {
         PreparedStatement statement = generatedKeys == GeneratedKeys.RETURN
                 ? connection.prepareStatement(preparedQuery, Statement.RETURN_GENERATED_KEYS)
                 : connection.prepareStatement(preparedQuery);
-        CursorIterator iterator = new CursorIterator(parametersInQuery.size());
+        Parameter.Position position = new Parameter.Position(0);
         try {
-            for (Integer pos : iterator) {
-                String name = parametersInQuery.get(pos);
-                new Parameter<>(parameters.get(name)).registerIN(statement, pos + 1);
+            for (String name : parametersInQuery) {
+                position.setName(name);
+                new Parameter<>(parameters.get(name)).registerIN(statement, position.incrementAndGet());
             }
         } catch (SQLException e) {
-            String name = parametersInQuery.get(iterator.getPos());
             String errorMsg = "Error setting '%s' parameter in statement! - %s";
-            throw new SQLException(String.format(errorMsg, name, e.getMessage()), e);
+            throw new SQLException(String.format(errorMsg, position.getName(), e.getMessage()), e);
         }
         statement.execute();
         return statement;
