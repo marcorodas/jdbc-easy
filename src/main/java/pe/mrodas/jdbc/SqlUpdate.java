@@ -123,7 +123,7 @@ public class SqlUpdate implements SqlDML {
             PreparedStatement statement = (connection == null ? Connector.getConnection() : connection)
                     .prepareStatement(preparedQuery);
             int pos = this.registerParameters(statement, 0, this.fieldsMap);
-            this.registerParameters(statement, pos - 1, this.filtersMap);
+            this.registerParameters(statement, pos, this.filtersMap);
             statement.execute();
             return statement.getUpdateCount();
         } finally {
